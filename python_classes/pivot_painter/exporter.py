@@ -36,7 +36,8 @@ class PivotPainterExporter:
 
     REQUIRED_ATTRIBUTES = [
         "stem_id",
-        "hierarchy_depth",
+        "hierarchy_depth",  # pitikö tä rivi poistaa?
+        "parent_stem_id",
         "pivot_position",
         "branch_extent",
         "direction",  # X-Vector for Pivot Painter 2.0

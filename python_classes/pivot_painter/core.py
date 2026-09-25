@@ -13,6 +13,21 @@ from numpy.typing import NDArray
 # Golden ratio conjugate for stem ID hashing
 GOLDEN_RATIO_CONJUGATE = 0.61803398875
 
+# Pivot Painter 2 stores integers as the bit pattern of a half float, offset past
+# the denormals. ms_PivotPainter2_UnpackIntegerAsFloat reverses this in the shader.
+INDEX_PACKING_OFFSET = 1024
+MAX_PACKABLE_INDEX = 0x7C00 - INDEX_PACKING_OFFSET - 1
+
+
+def pack_index_as_float(indices: NDArray[np.integer] | int) -> NDArray[np.floating]:
+    """Encode integer indices the way Epic's UnpackIntegerAsFloat expects them."""
+    bits = np.asarray(indices).astype(np.int64) + INDEX_PACKING_OFFSET
+    if np.any(bits < INDEX_PACKING_OFFSET) or np.any(
+        bits > MAX_PACKABLE_INDEX + INDEX_PACKING_OFFSET
+    ):
+        raise ValueError(f"index outside the packable range 0..{MAX_PACKABLE_INDEX}")
+    return bits.astype(np.uint16).view(np.float16).astype(np.float64)
+
 
 def compute_stem_id_hash(stem_ids: NDArray[np.floating]) -> NDArray[np.floating]:
     """Compute golden ratio hash for stem IDs to avoid wrap-around patterns.
@@ -141,17 +156,17 @@ def normalize_direction_vector(
 def create_pivot_index_pixels(
     stem_ids: NDArray[np.floating],
     pivot_positions: NDArray[np.floating],
-    hierarchy_depths: NDArray[np.floating],
+    parent_ids: NDArray[np.floating],
     texture_size: int,
 ) -> NDArray[np.floating]:
     """Create pixel data for PivotPos_Index texture.
 
-    Epic's format: RGB = pivot world position, A = hierarchy depth.
+    RGB = pivot world position, A = parent index packed as a half float bit pattern.
 
     Args:
         stem_ids: Per-vertex stem IDs.
         pivot_positions: Per-vertex pivot positions (Nx3 array).
-        hierarchy_depths: Per-vertex hierarchy depths.
+        parent_ids: Per-vertex parent stem IDs.
         texture_size: Width/height of the square texture.
 
     Returns:
@@ -170,7 +185,7 @@ def create_pivot_index_pixels(
         # Get first vertex data for this stem
         idx = np.where(mask)[0][0]
         pos = pivot_positions[idx]
-        depth = hierarchy_depths[idx]
+        parent_id = parent_ids[idx]
 
         # Map stem_id to pixel coordinates
         px, py = stem_id_to_pixel_coords(int(stem_id), size)
@@ -180,7 +195,7 @@ def create_pivot_index_pixels(
             pixels[pixel_idx] = pos[0]  # R = X position
             pixels[pixel_idx + 1] = pos[1]  # G = Y position
             pixels[pixel_idx + 2] = pos[2]  # B = Z position
-            pixels[pixel_idx + 3] = depth  # A = hierarchy depth
+            pixels[pixel_idx + 3] = float(pack_index_as_float(int(parent_id)))
 
     return pixels
 
@@ -193,7 +208,7 @@ def create_xvector_extent_pixels(
 ) -> NDArray[np.floating]:
     """Create pixel data for XVector_Extent texture.
 
-    Epic's format: RGB = normalized branch direction, A = branch length.
+    RGB = normalized branch direction, A = branch length.
 
     Args:
         stem_ids: Per-vertex stem IDs.

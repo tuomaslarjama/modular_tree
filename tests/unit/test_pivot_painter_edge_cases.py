@@ -8,6 +8,7 @@ from core import (
     create_xvector_extent_pixels,
     normalize_direction_vector,
     normalize_with_minimum,
+    pack_index_as_float,
     pack_unity_vertex_colors,
     stem_id_to_pixel_coords,
     stem_id_to_uv_coords,
@@ -40,7 +41,7 @@ class TestEmptyDataArrays:
         result = create_pivot_index_pixels(
             stem_ids=np.array([]),
             pivot_positions=np.zeros((0, 3)),
-            hierarchy_depths=np.array([]),
+            parent_ids=np.array([]),
             texture_size=4,
         )
         assert len(result) == 4 * 4 * 4
@@ -84,14 +85,14 @@ class TestSingleVertexCases:
         result = create_pivot_index_pixels(
             stem_ids=np.array([0.0]),
             pivot_positions=np.array([[1.0, 2.0, 3.0]]),
-            hierarchy_depths=np.array([0.5]),
+            parent_ids=np.array([2.0]),
             texture_size=4,
         )
         # Only pixel 0 should be set
         assert result[0] == pytest.approx(1.0)  # X
         assert result[1] == pytest.approx(2.0)  # Y
         assert result[2] == pytest.approx(3.0)  # Z
-        assert result[3] == pytest.approx(0.5)  # depth
+        assert result[3] == pytest.approx(float(pack_index_as_float(2)))
         # Other pixels should be zero
         assert result[4] == 0.0
 
@@ -157,9 +158,9 @@ class TestTextureBoundaryConditions:
         size = 4
         stem_ids = np.array([0.0, 16.0])  # Second one overflows
         positions = np.array([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
-        depths = np.array([1.0, 1.0])
+        parent_ids = np.array([0.0, 0.0])
 
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=size)
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=size)
 
         # Stem 0 should be written
         assert result[0] == pytest.approx(1.0)
@@ -170,7 +171,7 @@ class TestTextureBoundaryConditions:
         result = create_pivot_index_pixels(
             stem_ids=np.array([0.0]),
             pivot_positions=np.array([[1.0, 2.0, 3.0]]),
-            hierarchy_depths=np.array([0.5]),
+            parent_ids=np.array([0.0]),
             texture_size=1,
         )
         assert len(result) == 4
@@ -269,7 +270,7 @@ class TestNegativeValues:
         result = create_pivot_index_pixels(
             stem_ids=np.array([0.0]),
             pivot_positions=np.array([[-10.0, -20.0, -30.0]]),
-            hierarchy_depths=np.array([1.0]),
+            parent_ids=np.array([0.0]),
             texture_size=4,
         )
         assert result[0] == pytest.approx(-10.0)
@@ -290,13 +291,14 @@ class TestDuplicateStemIds:
                 [3.0, 0.0, 0.0],  # Duplicate
             ]
         )
-        depths = np.array([0.1, 0.2, 0.3])
-
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=4)
+        parent_ids = np.array([2.0, 2.0, 2.0])
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=4)
 
         # Should use first vertex's data
         assert result[0] == pytest.approx(1.0)  # First position
-        assert result[3] == pytest.approx(0.1)  # First depth
+        assert result[3] == pytest.approx(
+            float(pack_index_as_float(2))
+        )  # First parent id packed as half float
 
     def test_create_xvector_uses_first_vertex(self):
         """XVector texture uses first vertex for duplicate stems."""
@@ -356,9 +358,9 @@ class TestMixedStemIds:
                 [3.0, 0.0, 0.0],
             ]
         )
-        depths = np.array([1.0, 2.0, 3.0])
+        parent_ids = np.array([0.0, 0.0, 5.0])
 
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=16)
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=16)
 
         # Check each stem's pixel
         assert result[0] == pytest.approx(1.0)  # Stem 0, pixel 0
@@ -375,9 +377,9 @@ class TestMixedStemIds:
                 [3.0, 0.0, 0.0],
             ]
         )
-        depths = np.array([1.0, 1.0, 1.0])
+        parent_ids = np.array([0.0, 0.0, 1.0])
 
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=4)
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=4)
 
         # Stem 0 -> pixel 0, Stem 1 -> pixel 1, Stem 2 -> pixel 2
         assert result[0] == pytest.approx(1.0)  # Pixel 0

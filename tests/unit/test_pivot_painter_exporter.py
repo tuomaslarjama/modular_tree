@@ -86,7 +86,11 @@ class TestPivotPainterExporterValidation:
     def test_validate_missing_pivot_position(self):
         """Validation fails when pivot_position is missing."""
         mock_mesh = MagicMock()
-        mock_mesh.attributes = {"stem_id": MagicMock(), "hierarchy_depth": MagicMock()}
+        mock_mesh.attributes = {
+            "stem_id": MagicMock(),
+            "parent_stem_id": MagicMock(),
+            "hierarchy_depth": MagicMock(),
+        }
 
         exporter = PivotPainterExporter(mock_mesh, ExportFormat.UE5)
         result = exporter.validate()
@@ -100,6 +104,7 @@ class TestPivotPainterExporterValidation:
         mock_mesh = MagicMock()
         mock_mesh.attributes = {
             "stem_id": MagicMock(),
+            "parent_stem_id": MagicMock(),
             "hierarchy_depth": MagicMock(),
             "pivot_position": MagicMock(),
         }
@@ -116,6 +121,7 @@ class TestPivotPainterExporterValidation:
         mock_mesh = MagicMock()
         mock_mesh.attributes = {
             "stem_id": MagicMock(),
+            "parent_stem_id": MagicMock(),
             "hierarchy_depth": MagicMock(),
             "pivot_position": MagicMock(),
             "branch_extent": MagicMock(),
@@ -133,6 +139,7 @@ class TestPivotPainterExporterValidation:
         mock_mesh = MagicMock()
         mock_mesh.attributes = {
             "stem_id": MagicMock(),
+            "parent_stem_id": MagicMock(),
             "hierarchy_depth": MagicMock(),
             "pivot_position": MagicMock(),
             "branch_extent": MagicMock(),
@@ -153,6 +160,7 @@ class TestPivotPainterExporterExport:
         mock_mesh = MagicMock()
         mock_mesh.attributes = {
             "stem_id": MagicMock(),
+            "parent_stem_id": MagicMock(),
             "hierarchy_depth": MagicMock(),
             "pivot_position": MagicMock(),
             "branch_extent": MagicMock(),
@@ -255,6 +263,7 @@ class TestRequiredAttributes:
         """All required attributes are in the list."""
         expected = {
             "stem_id",
+            "parent_stem_id",
             "hierarchy_depth",
             "pivot_position",
             "branch_extent",

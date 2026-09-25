@@ -31,12 +31,8 @@ class UnrealExporter:
         - Texture 2 (XVector_Extent): RGB = branch direction (X-Vector), A = branch extent
         - UV2 layer: encodes stem ID as texture lookup coordinates
 
-    Deviations from Epic's default setup: their Texture 1 alpha holds a parent
-    index, which PivotPainter2FoliageShader uses to rebuild hierarchies up to
-    four levels deep, and their X-Vector is 8-bit bias-scaled. This exporter
-    writes steps from root instead, and raw 16-bit direction vectors. The
-    textures therefore suit a custom material; PivotPainter2FoliageShader will
-    animate them, but without inherited parent motion.
+    Deviations from Epic's default setup: X-vector and extent are written raw in 16-bit
+    float, rather than bias-scaled into 8 bits.
     """
 
     def __init__(
@@ -48,6 +44,7 @@ class UnrealExporter:
         is_ue5: bool = True,
         include_leaf_data: bool = False,
         unit_scale: float = 100.0,
+        flip_y: bool = True,
     ):
         self.mesh = mesh
         self.object_name = object_name
@@ -56,6 +53,7 @@ class UnrealExporter:
         self.is_ue5 = is_ue5
         self.include_leaf_data = include_leaf_data
         self.unit_scale = unit_scale
+        self.axis_signs = np.array([1.0, -1.0 if flip_y else 1.0, 1.0])
 
     def export(self) -> ExportResult:
         """Export textures and UV2 for Unreal Engine."""
@@ -114,14 +112,14 @@ class UnrealExporter:
         num_verts = len(self.mesh.vertices)
 
         stem_ids = np.zeros(num_verts)
-        hierarchy_depths = np.zeros(num_verts)
+        parent_ids = np.zeros(num_verts)
         pivot_positions = np.zeros((num_verts, 3))
         branch_extents = np.zeros(num_verts)
         directions = np.zeros((num_verts, 3))
 
         for attr_name, target, is_vector in [
             ("stem_id", stem_ids, False),
-            ("hierarchy_depth", hierarchy_depths, False),
+            ("parent_stem_id", parent_ids, False),
             ("pivot_position", pivot_positions, True),
             ("branch_extent", branch_extents, False),
             ("direction", directions, True),
@@ -130,7 +128,7 @@ class UnrealExporter:
 
         return {
             "stem_ids": stem_ids,
-            "hierarchy_depths": hierarchy_depths,
+            "parent_ids": parent_ids,
             "pivot_positions": pivot_positions,
             "branch_extents": branch_extents,
             "directions": directions,
@@ -207,11 +205,12 @@ class UnrealExporter:
 
         The units are scaled to Unreal's unit system.
         (default 1 Blender unit = 1 m, so scale by 100 for Unreal centimeters)
+        Y is negated because Blender is right-handed and Unreal is left-handed.
         """
         pixels = create_pivot_index_pixels(
             stem_ids=vertex_data["stem_ids"],
-            pivot_positions=vertex_data["pivot_positions"] * self.unit_scale,
-            hierarchy_depths=vertex_data["hierarchy_depths"],
+            pivot_positions=vertex_data["pivot_positions"] * self.unit_scale * self.axis_signs,
+            parent_ids=vertex_data["parent_ids"],
             texture_size=self.texture_size,
         )
         self._save_exr_texture("PivotPos_Index", pixels, filepath)
@@ -222,10 +221,13 @@ class UnrealExporter:
         RGB holds the normalized branch direction, written raw rather than
         bias-scaled into 8 bits the way Epic's tools do. A holds the branch
         extent in Unreal units, again raw rather than divided by 2048.
+        The units are scaled to Unreal's unit system.
+        (default 1 Blender unit = 1 m, so scale by 100 for Unreal centimeters)
+        Y is negated because Blender is right-handed and Unreal is left-handed.
         """
         pixels = create_xvector_extent_pixels(
             stem_ids=vertex_data["stem_ids"],
-            directions=vertex_data["directions"],
+            directions=vertex_data["directions"] * self.axis_signs,
             branch_extents=vertex_data["branch_extents"] * self.unit_scale,
             texture_size=self.texture_size,
         )
@@ -238,10 +240,11 @@ class UnrealExporter:
         enabling accurate wind animation pivot points.
         The units are scaled to Unreal's unit system.
         (default 1 Blender unit = 1 m, so scale by 100 for Unreal centimeters)
+        Y is negated because Blender is right-handed and Unreal is left-handed.
         """
         pixels = create_leaf_attachment_pixels(
             leaf_ids=leaf_data["leaf_ids"],
-            attachment_points=leaf_data["attachment_points"] * self.unit_scale,
+            attachment_points=leaf_data["attachment_points"] * self.unit_scale * self.axis_signs,
             texture_size=self.texture_size,
         )
         self._save_exr_texture("LeafAttachment", pixels, filepath)
@@ -251,10 +254,11 @@ class UnrealExporter:
 
         Used in UE5 to orient leaf billboards and compute wind response
         based on leaf surface normal direction.
+        Y is negated because Blender is right-handed and Unreal is left-handed.
         """
         pixels = create_leaf_facing_pixels(
             leaf_ids=leaf_data["leaf_ids"],
-            facing_directions=leaf_data["facing_directions"],
+            facing_directions=leaf_data["facing_directions"] * self.axis_signs,
             texture_size=self.texture_size,
         )
         self._save_exr_texture("LeafFacing", pixels, filepath)

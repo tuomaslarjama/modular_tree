@@ -23,6 +23,7 @@ class ManifoldMesher : public TreeMesher
 		inline static std::string hierarchy_depth = "hierarchy_depth";
 		inline static std::string pivot_position = "pivot_position";
 		inline static std::string branch_extent = "branch_extent";
+		inline static std::string parent_stem_id = "parent_stem_id";
 		// Phyllotaxis attribute
 		inline static std::string phyllotaxis_angle = "phyllotaxis_angle";
 	};

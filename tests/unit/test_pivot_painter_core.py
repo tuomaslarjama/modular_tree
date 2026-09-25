@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 from core import (
     GOLDEN_RATIO_CONJUGATE,
+    INDEX_PACKING_OFFSET,
+    MAX_PACKABLE_INDEX,
     compute_leaf_attachment_points,
     compute_leaf_facing_directions,
     compute_stem_id_hash,
@@ -13,6 +15,7 @@ from core import (
     create_xvector_extent_pixels,
     normalize_direction_vector,
     normalize_with_minimum,
+    pack_index_as_float,
     pack_unity_vertex_colors,
     stem_id_to_pixel_coords,
     stem_id_to_uv_coords,
@@ -306,15 +309,18 @@ class TestCreatePivotIndexPixels:
     def test_basic_pixel_generation(self):
         """Basic pixel generation for single stem."""
         stem_ids = np.array([0.0, 0.0, 0.0])
-        positions = np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
-        depths = np.array([0.5, 0.5, 0.5])
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=4)
 
-        # Pixel 0 should contain position and depth
+        positions = np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
+        parent_ids = np.array([2.0, 2.0, 2.0])
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=4)
+
+        # Pixel 0 should contain position and parent id packed as half float
         assert result[0] == pytest.approx(1.0)  # R = X
         assert result[1] == pytest.approx(2.0)  # G = Y
         assert result[2] == pytest.approx(3.0)  # B = Z
-        assert result[3] == pytest.approx(0.5)  # A = depth
+        assert result[3] == pytest.approx(
+            float(pack_index_as_float(2))
+        )  # A = parent id packed as half float
 
     def test_multiple_stems(self):
         """Multiple stems write to different pixels."""
@@ -333,14 +339,14 @@ class TestCreatePivotIndexPixels:
         """Stem ID that wraps to second row."""
         stem_ids = np.array([4.0])  # In 4x4 texture, this is row 1, col 0
         positions = np.array([[5.0, 6.0, 7.0]])
-        depths = np.array([1.0])
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=4)
+        parent_ids = np.array([2.0, 2.0, 2.0])
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=4)
 
         # Pixel at row 1, col 0 -> index = (1 * 4 + 0) * 4 = 16
         assert result[16] == pytest.approx(5.0)
         assert result[17] == pytest.approx(6.0)
         assert result[18] == pytest.approx(7.0)
-        assert result[19] == pytest.approx(1.0)
+        assert result[19] == pytest.approx(float(pack_index_as_float(2)))
 
     def test_output_size(self):
         """Output array has correct size."""
@@ -362,12 +368,12 @@ class TestCreatePivotIndexPixels:
         """Uses first vertex's data for each stem."""
         stem_ids = np.array([0.0, 0.0, 0.0])
         positions = np.array([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]])
-        depths = np.array([0.1, 0.2, 0.3])
-        result = create_pivot_index_pixels(stem_ids, positions, depths, texture_size=4)
+        parent_ids = np.array([2.0, 2.0, 2.0])
+        result = create_pivot_index_pixels(stem_ids, positions, parent_ids, texture_size=4)
 
         # Should use first vertex's position (1.0) not others
         assert result[0] == pytest.approx(1.0)
-        assert result[3] == pytest.approx(0.1)
+        assert result[3] == pytest.approx(float(pack_index_as_float(2)))
 
 
 class TestCreateXvectorExtentPixels:
@@ -729,3 +735,18 @@ class TestCreateLeafFacingPixels:
         assert result[3 * 4 + 1] == pytest.approx(0.0)
         # Leaf 7 -> pixel 7, uses first vertex direction [0, 0, 1]
         assert result[7 * 4 + 2] == pytest.approx(1.0)
+
+
+class TestPackIndexAsFloat:
+    def test_round_trip(self):
+        for index in [0, 1, 2048, 30719]:
+            packed = np.float32(pack_index_as_float(index))
+            bits = packed.view(np.uint32)
+            sign = (bits >> 16) & 0x8000
+            exponent = ((int((bits >> 23) & 0xFF) - 127 + 15) << 10) & 0xFFFF
+            mantissa = (bits >> 13) & 0x3FF
+            assert int((sign | exponent | mantissa) - INDEX_PACKING_OFFSET) == index
+
+    def test_rejects_out_of_range(self):
+        with pytest.raises(ValueError):
+            pack_index_as_float(MAX_PACKABLE_INDEX + 1)

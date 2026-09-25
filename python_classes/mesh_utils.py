@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 FLOAT_ATTRIBUTES = [
     "radius",
     "stem_id",
+    "parent_stem_id",
     "hierarchy_depth",
     "branch_extent",
     "vein_distance",

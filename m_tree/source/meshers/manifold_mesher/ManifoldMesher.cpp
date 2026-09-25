@@ -32,6 +32,7 @@ struct IndexRange
 struct PivotPainterContext
 {
 	int stem_id;
+	int parent_stem_id;
 	int hierarchy_depth;
 	Vector3 pivot_position;
 	float branch_extent;
@@ -76,6 +77,8 @@ CircleDesignator add_circle(const Vector3& node_position, const Node& node, floa
 	// Pivot Painter attributes
 	auto& stem_id_attr =
 	    *static_cast<Attribute<float>*>(mesh.attributes[AttributeNames::stem_id].get());
+	auto& parent_stem_id_attr =
+	    *static_cast<Attribute<float>*>(mesh.attributes[AttributeNames::parent_stem_id].get());
 	auto& hierarchy_depth_attr =
 	    *static_cast<Attribute<float>*>(mesh.attributes[AttributeNames::hierarchy_depth].get());
 	auto& pivot_position_attr =
@@ -98,6 +101,7 @@ CircleDesignator add_circle(const Vector3& node_position, const Node& node, floa
 		direction_attr.data[index] = node.direction;
 		// Set Pivot Painter attributes
 		stem_id_attr.data[index] = (float)pp_ctx.stem_id;
+		parent_stem_id_attr.data[index] = (float)pp_ctx.parent_stem_id;
 		hierarchy_depth_attr.data[index] = (float)pp_ctx.hierarchy_depth;
 		pivot_position_attr.data[index] = pp_ctx.pivot_position;
 		branch_extent_attr.data[index] = pp_ctx.branch_extent;
@@ -229,6 +233,8 @@ void add_child_base_geometry(const std::vector<int>& child_base_indices,
 	// Pivot Painter attributes
 	auto& stem_id_attr = *static_cast<Attribute<float>*>(
 	    mesh.attributes[ManifoldMesher::AttributeNames::stem_id].get());
+	auto& parent_stem_id_attr = *static_cast<Attribute<float>*>(
+	    mesh.attributes[ManifoldMesher::AttributeNames::parent_stem_id].get());
 	auto& hierarchy_depth_attr = *static_cast<Attribute<float>*>(
 	    mesh.attributes[ManifoldMesher::AttributeNames::hierarchy_depth].get());
 	auto& pivot_position_attr = *static_cast<Attribute<Vector3>*>(
@@ -261,6 +267,7 @@ void add_child_base_geometry(const std::vector<int>& child_base_indices,
 		direction_attr.data[added_vertex_index] = direction;
 		// Set Pivot Painter attributes
 		stem_id_attr.data[added_vertex_index] = (float)pp_ctx.stem_id;
+		parent_stem_id_attr.data[added_vertex_index] = (float)pp_ctx.parent_stem_id;
 		hierarchy_depth_attr.data[added_vertex_index] = (float)pp_ctx.hierarchy_depth;
 		pivot_position_attr.data[added_vertex_index] = pp_ctx.pivot_position;
 		branch_extent_attr.data[added_vertex_index] = pp_ctx.branch_extent;
@@ -425,6 +432,7 @@ void mesh_node_rec(const Node& node, const Vector3& node_position, const CircleD
 				// Create new context for side branch with incremented stem_id and depth
 				PivotPainterContext child_pp_ctx;
 				child_pp_ctx.stem_id = ++stem_id_counter;
+				child_pp_ctx.parent_stem_id = pp_ctx.stem_id;
 				child_pp_ctx.hierarchy_depth = pp_ctx.hierarchy_depth + 1;
 				child_pp_ctx.pivot_position = child_pos;
 				child_pp_ctx.branch_extent = calculate_branch_extent(child.node);
@@ -452,6 +460,7 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 	auto& direction_attr = mesh.add_attribute<Vector3>(AttributeNames::direction);
 	// Pivot Painter 2.0 attributes
 	auto& stem_id_attr = mesh.add_attribute<float>(AttributeNames::stem_id);
+	auto& parent_stem_id_attr = mesh.add_attribute<float>(AttributeNames::parent_stem_id);
 	auto& hierarchy_depth_attr = mesh.add_attribute<float>(AttributeNames::hierarchy_depth);
 	auto& pivot_position_attr = mesh.add_attribute<Vector3>(AttributeNames::pivot_position);
 	auto& branch_extent_attr = mesh.add_attribute<float>(AttributeNames::branch_extent);
@@ -469,6 +478,7 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 		// Initialize Pivot Painter context for this stem
 		PivotPainterContext pp_ctx;
 		pp_ctx.stem_id = stem_id_counter++;
+		pp_ctx.parent_stem_id = pp_ctx.stem_id;
 		pp_ctx.hierarchy_depth = 0;
 		pp_ctx.pivot_position = stem.position;
 		pp_ctx.branch_extent = calculate_branch_extent(stem.node);
