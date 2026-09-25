@@ -270,6 +270,8 @@ class UnrealExporter:
         size = self.texture_size
 
         image = bpy.data.images.new(name, width=size, height=size, alpha=True, float_buffer=True)
+        image.colorspace_settings.name = "Non-Color"
+        image.alpha_mode = "CHANNEL_PACKED"
         image.pixels = pixels.tolist()
         image.filepath_raw = filepath
         image.file_format = "OPEN_EXR"
