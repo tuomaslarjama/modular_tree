@@ -61,7 +61,7 @@ class MTreePivotPainterExport(bpy.types.Node, MtreeNode):
         if len(self.inputs) == 0:
             return False
         tree_input = self.inputs[0]
-        return tree_input.links
+        return bool(tree_input.links)
 
     def _get_tree_object(self):
         """Get the tree object from the connected mesher node."""
