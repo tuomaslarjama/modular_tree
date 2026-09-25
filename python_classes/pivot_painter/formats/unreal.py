@@ -1,6 +1,6 @@
 """Unreal Engine-specific Pivot Painter 2.0 export.
 
-Generates textures compatible with Epic's PivotPainter2FoliageShader material function.
+Generates Pivot Painter 2.0 style textures and a UV2 lookup layer for Unreal Engine.
 """
 
 from __future__ import annotations
@@ -26,16 +26,17 @@ from ..exporter import ExportResult
 class UnrealExporter:
     """Exports Pivot Painter 2.0 data for Unreal Engine 4/5.
 
-    Generates textures in Epic's expected format:
-        - Texture 1 (PivotPos_Index): RGB = pivot position, A = hierarchy depth
+    Generates textures in the Pivot Painter 2.0 layout:
+        - Texture 1 (PivotPos_Index): RGB = pivot position, A = number of steps from root
         - Texture 2 (XVector_Extent): RGB = branch direction (X-Vector), A = branch extent
-        - UV2 layer: Encodes stem ID as texture lookup coordinates
+        - UV2 layer: encodes stem ID as texture lookup coordinates
 
-    When leaf data is present, also generates:
-        - Texture 3 (LeafAttachment): RGB = leaf attachment world position, A = 1.0
-        - Texture 4 (LeafFacing): RGB = leaf facing direction, A = 1.0
-
-    These textures work directly with UE's PivotPainter2FoliageShader material function.
+    Deviations from Epic's default setup: their Texture 1 alpha holds a parent
+    index, which PivotPainter2FoliageShader uses to rebuild hierarchies up to
+    four levels deep, and their X-Vector is 8-bit bias-scaled. This exporter
+    writes steps from root instead, and raw 16-bit direction vectors. The
+    textures therefore suit a custom material; PivotPainter2FoliageShader will
+    animate them, but without inherited parent motion.
     """
 
     def __init__(
@@ -46,6 +47,7 @@ class UnrealExporter:
         export_path: str,
         is_ue5: bool = True,
         include_leaf_data: bool = False,
+        unit_scale: float = 100.0,
     ):
         self.mesh = mesh
         self.object_name = object_name
@@ -53,6 +55,7 @@ class UnrealExporter:
         self.export_path = export_path
         self.is_ue5 = is_ue5
         self.include_leaf_data = include_leaf_data
+        self.unit_scale = unit_scale
 
     def export(self) -> ExportResult:
         """Export textures and UV2 for Unreal Engine."""
@@ -64,15 +67,15 @@ class UnrealExporter:
         # Extract vertex data
         vertex_data = self._extract_vertex_data()
 
-        # Generate textures in Epic's Pivot Painter 2.0 format
+        # Generate textures in Epic's Pivot Painter 2.0 layout
         files_created = []
 
-        # Texture 1: RGB = Pivot Position, A = Hierarchy Depth (parent index proxy)
+        # Texture 1: RGB = Pivot Position, A = Number of Steps From Root
         pivot_path = os.path.join(export_dir, f"{self.object_name}_PivotPos_Index.exr")
         self._create_pivot_index_texture(vertex_data, pivot_path)
         files_created.append(pivot_path)
 
-        # Texture 2: RGB = X-Vector (direction), A = X-Extent (branch length)
+        # Texture 2: RGB = X-Vector (direction), A = X-Extent (branch extent)
         xvector_path = os.path.join(export_dir, f"{self.object_name}_XVector_Extent.exr")
         self._create_xvector_extent_texture(vertex_data, xvector_path)
         files_created.append(xvector_path)
@@ -99,7 +102,7 @@ class UnrealExporter:
         return ExportResult(
             success=True,
             message=f"Exported Pivot Painter 2.0 textures for {engine}. "
-            f"Use with PivotPainter2FoliageShader material function.{leaf_msg}",
+            f"Textures are read through UV2.{leaf_msg}",
             files_created=files_created,
         )
 
@@ -200,15 +203,14 @@ class UnrealExporter:
                     has_value[vert_idx] = True
 
     def _create_pivot_index_texture(self, vertex_data: dict, filepath: str) -> None:
-        """Create texture with pivot position (RGB) and hierarchy depth (A).
+        """Create texture with pivot position (RGB) and number of steps from root (A).
 
-        Epic's format: RGB = pivot world position, A = parent index.
-        We use hierarchy_depth as a proxy for parent index since it indicates
-        how many steps from the root this branch is.
+        The units are scaled to Unreal's unit system.
+        (default 1 Blender unit = 1 m, so scale by 100 for Unreal centimeters)
         """
         pixels = create_pivot_index_pixels(
             stem_ids=vertex_data["stem_ids"],
-            pivot_positions=vertex_data["pivot_positions"],
+            pivot_positions=vertex_data["pivot_positions"] * self.unit_scale,
             hierarchy_depths=vertex_data["hierarchy_depths"],
             texture_size=self.texture_size,
         )
@@ -217,13 +219,14 @@ class UnrealExporter:
     def _create_xvector_extent_texture(self, vertex_data: dict, filepath: str) -> None:
         """Create texture with X-Vector (RGB) and branch extent (A).
 
-        Epic's format: RGB = normalized branch direction, A = branch length.
-        The X-Vector is used to calculate rotation axis: cross(XVector, WindDir).
+        RGB holds the normalized branch direction, written raw rather than
+        bias-scaled into 8 bits the way Epic's tools do. A holds the branch
+        extent in Unreal units, again raw rather than divided by 2048.
         """
         pixels = create_xvector_extent_pixels(
             stem_ids=vertex_data["stem_ids"],
             directions=vertex_data["directions"],
-            branch_extents=vertex_data["branch_extents"],
+            branch_extents=vertex_data["branch_extents"] * self.unit_scale,
             texture_size=self.texture_size,
         )
         self._save_exr_texture("XVector_Extent", pixels, filepath)
@@ -233,10 +236,12 @@ class UnrealExporter:
 
         Used in UE5 to determine where each leaf connects to its parent branch,
         enabling accurate wind animation pivot points.
+        The units are scaled to Unreal's unit system.
+        (default 1 Blender unit = 1 m, so scale by 100 for Unreal centimeters)
         """
         pixels = create_leaf_attachment_pixels(
             leaf_ids=leaf_data["leaf_ids"],
-            attachment_points=leaf_data["attachment_points"],
+            attachment_points=leaf_data["attachment_points"] * self.unit_scale,
             texture_size=self.texture_size,
         )
         self._save_exr_texture("LeafAttachment", pixels, filepath)
