@@ -3,6 +3,7 @@ from __future__ import annotations
 from random import randint
 
 import bpy
+from bpy.app.handlers import persistent
 
 from ...m_tree_wrapper import lazy_m_tree
 from ...viewport.shape_formulas import BLENDER_SHAPE_MAP
@@ -43,17 +44,21 @@ PARAM_DESCRIPTIONS = {
     "start_radius": "Branch radius at base relative to parent",
 }
 
-
-from bpy.app.handlers import persistent
-
 # Sockets added after the first templates were made. Kept out of init() so older
 # saved nodes can be given the same sockets when a file loads.
 LATER_SOCKETS = [
-    ("mt_FloatSocket", "Phillotaxis Offset", "phillotaxis_offset", 0.0, {"min_value": 0, "max_value": 360}),
+    (
+        "mt_FloatSocket",
+        "Phillotaxis Offset",
+        "phillotaxis_offset",
+        0.0,
+        {"min_value": 0, "max_value": 360},
+    ),
     ("mt_BoolSocket", "Offset From Up", "offset_from_up", False, {}),
     ("mt_FloatSocket", "Skip Chance", "skip_chance", 0.0, {"min_value": 0, "max_value": 1}),
     ("mt_FloatSocket", "Angle Spread", "angle_variation", 0.0, {"min_value": -45, "max_value": 45}),
 ]
+
 
 def _update_crown_property(self, context):
     """Trigger auto-update when crown shape properties change."""
@@ -94,9 +99,21 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
     arrangement: bpy.props.EnumProperty(
         name="Arrangement",
         items=[
-            ("SPIRAL", "Spiral", "One branch per node, turned by the Phillotaxis angle (birch, oak, rowan)"),
-            ("ALTERNATE", "Alternate", "One branch per node in two rows, 180 degrees apart (linden and elm shoots)"),
-            ("OPPOSITE", "Opposite", "Pairs, each pair turned 90 degrees from the last (maple, ash)"),
+            (
+                "SPIRAL",
+                "Spiral",
+                "One branch per node, turned by the Phillotaxis angle (birch, oak, rowan)",
+            ),
+            (
+                "ALTERNATE",
+                "Alternate",
+                "One branch per node in two rows, 180 degrees apart (linden and elm shoots)",
+            ),
+            (
+                "OPPOSITE",
+                "Opposite",
+                "Pairs, each pair turned 90 degrees from the last (maple, ash)",
+            ),
             ("WHORLED", "Whorled", "Rings of branches around the parent (pine, spruce)"),
         ],
         default="SPIRAL",
@@ -145,7 +162,7 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
 
     def draw(self, context, layout):
         layout.prop(self, "crown_shape", text="Crown")
-        layout.prop(self, "arrangement", text="") 
+        layout.prop(self, "arrangement", text="")
 
     # Mapping from socket property_name to nested struct path
     NESTED_PROPERTY_MAP = {
@@ -355,7 +372,7 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
             property_value=137.5,
             description=PARAM_DESCRIPTIONS["phillotaxis"],
         )
-        
+
         # Advanced parameters
         self.add_input(
             "mt_FloatSocket",
@@ -449,7 +466,7 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
             op.preset = preset_name
             op.node_tree_name = self.id_data.name
             op.node_name = self.name
-        
+
         box.prop(self, "crown_hull")
 
         # Existing sections
@@ -504,7 +521,8 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
                 description=PARAM_DESCRIPTIONS.get(property_name, ""),
                 **limits,
             )
-            
+
+
 @persistent
 def add_missing_sockets_on_load(_):
     for node_tree in bpy.data.node_groups:

@@ -1,8 +1,6 @@
 import bpy
 import nodeitems_utils
 from bpy.utils import register_class, unregister_class
-from .base_types import node_tree
-from .tree_function_nodes import branch_node, crown_hull
 
 from . import (
     base_types,
@@ -13,6 +11,8 @@ from . import (
     sockets,
     tree_function_nodes,
 )
+from .base_types import node_tree
+from .tree_function_nodes import branch_node, crown_hull
 
 
 def register():

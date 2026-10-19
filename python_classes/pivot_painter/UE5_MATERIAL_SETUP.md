@@ -8,8 +8,8 @@ The exporter creates two textures in Epic's Pivot Painter 2.0 format:
 
 | Texture | RGB Channels | Alpha Channel |
 |---------|--------------|---------------|
-| `{Name}_PivotPos_Index.exr` | World-space pivot position (X, Y, Z) | Hierarchy depth |
-| `{Name}_XVector_Extent.exr` | Branch direction vector (normalized) | Branch length |
+| `{Name}_PivotPos_Index.exr` | Pivot position (X, Y, Z) in Unreal units (cm) | Parent stem index, packed for `ms_PivotPainter2_UnpackIntegerAsFloat` |
+| `{Name}_XVector_Extent.exr` | Branch direction vector (normalized) | Branch length (cm) |
 
 Plus a **UV2 layer** on the mesh that maps each vertex to its stem's pixel in the textures.
 
@@ -20,7 +20,7 @@ For both textures, configure these settings:
 | Setting | Value |
 |---------|-------|
 | **Mip Gen Settings** | NoMipMaps |
-| **Compression** | VectorDisplacementmap (RGBA8) or HDR (RGB, no sRGB) |
+| **Compression** | HDR (16-bit float). An 8-bit format such as VectorDisplacementmap destroys the positions and the packed parent index |
 | **sRGB** | **Unchecked** (critical - data textures, not color) |
 | **Filter** | Nearest |
 
@@ -94,7 +94,7 @@ The shader can be expensive with all features enabled. Optimize by:
 
 ### Mesh stretches or explodes
 - Verify using `PivotPainter2FoliageShader` function, not custom nodes
-- Check texture compression is VectorDisplacementmap, not Default
+- Check texture compression is HDR, not Default or an 8-bit format
 - Ensure sRGB is disabled on both textures
 
 ### Animation looks wrong
@@ -112,7 +112,7 @@ The shader can be expensive with all features enabled. Optimize by:
 
 ### Branches don't move independently
 - Check the X-Vector texture has valid direction data
-- Verify hierarchy depth values vary between branches
+- Verify the parent index is imported intact: the texture must use HDR compression
 
 ## FBX Export Settings (Blender)
 
@@ -127,7 +127,7 @@ When exporting from Blender:
 |---------|-------|----------|
 | All branches move together | Missing phase offset | Add PivotPos.X to Time before Sine |
 | No movement at all | UV1 not imported | Check FBX import includes UV channel 1 |
-| Black texture preview | Wrong compression | Use VectorDisplacementmap, disable sRGB |
+| Black texture preview | Wrong compression | Use HDR compression, disable sRGB |
 | Extreme movement | Amplitude too high | Reduce the 0.1 multiplier |
 
 ## References

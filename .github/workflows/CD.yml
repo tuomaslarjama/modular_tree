@@ -175,7 +175,8 @@ jobs:
 
   deploy:
     needs: [package-addon, release]
-    if: github.ref == 'refs/heads/main'
+    # Publishes to GoodPie's Blender Extensions listing, so it only runs in that repository
+    if: github.ref == 'refs/heads/main' && github.repository == 'GoodPie/modular_tree'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

@@ -1,7 +1,9 @@
 import bpy
+from bpy.app.handlers import persistent
 from mathutils import Matrix
 
 from ...m_tree_wrapper import lazy_m_tree
+from ..debounce import schedule_build
 
 # cells along the hull's longest side; a 10 m crown gets about 16 cm cells
 HULL_CELLS = 64
@@ -40,10 +42,6 @@ def _tree_matrix(node):
     if tree_object is None:
         return Matrix.Identity(4)
     return tree_object.matrix_world
-
-from bpy.app.handlers import persistent
-
-from ..debounce import schedule_build
 
 
 @persistent

@@ -125,7 +125,7 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
         if hull is not None:
             func.hull = hull
         return func
- 
+
     def init(self, context):
         self.add_input("mt_TreeSocket", "Tree", is_property=False)
 

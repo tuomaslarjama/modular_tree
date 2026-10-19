@@ -1,15 +1,15 @@
 schema_version = "1.0.0"
 
-id = "modular_tree"
-name = "Modular Tree"
-version = "5.5.2"
-website = "https://github.com/GoodPie/modular_tree"
+id = "modular_tree_larjama"
+name = "Modular Tree (Larjama fork)"
+version = "5.6.0"
+website = "https://github.com/tuomaslarjama/modular_tree"
 tagline = "Procedural node based 3D tree generation"
-maintainer = "GoodPie <brandynbb96@gmail.com>"
+maintainer = "Tuomas Larjama <1233659+tuomaslarjama@users.noreply.github.com>"
 type = "add-on"
 blender_version_min = "4.3.1"
 license = ["SPDX:GPL-3.0-or-later"]
-copyright = ["2021 MaximeHerpin", "2026 Brandyn Britton"]
+copyright = ["2021 MaximeHerpin", "2026 Brandyn Britton", "2026 Tuomas Larjama"]
 tags = ["Mesh", "Add Curve"]
 wheels = []
 platforms = ["windows-x64", "macos-x64", "macos-arm64", "linux-x64"]

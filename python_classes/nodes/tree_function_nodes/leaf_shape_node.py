@@ -12,9 +12,21 @@ from ..debounce import schedule_build
 
 # Socket parameter definitions for organized access
 CONTOUR_PARAMS = [
-    "m", "a", "b", "n1", "n2", "n3", "aspect_ratio", "width_balance",
-    "base_notch_depth", "base_notch_width", "base_asymmetry", "tip_length", "tip_width",
-    "contour_resolution", "inner_rings",
+    "m",
+    "a",
+    "b",
+    "n1",
+    "n2",
+    "n3",
+    "aspect_ratio",
+    "width_balance",
+    "base_notch_depth",
+    "base_notch_width",
+    "base_asymmetry",
+    "tip_length",
+    "tip_width",
+    "contour_resolution",
+    "inner_rings",
 ]
 MARGIN_PARAMS = ["tooth_count", "tooth_depth", "tooth_sharpness"]
 VENATION_PARAMS = ["vein_density", "kill_distance", "attraction_distance", "growth_step_size"]

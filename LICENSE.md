@@ -1,6 +1,7 @@
 Modular Tree
 Copyright (c) 2021 MaximeHerpin
 Copyright (c) 2026 Brandyn Britton
+Copyright (c) 2026 Tuomas Larjama
 
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
