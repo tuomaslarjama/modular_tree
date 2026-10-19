@@ -26,6 +26,7 @@ class ManifoldMesher : public TreeMesher
 		inline static std::string parent_stem_id = "parent_stem_id";
 		// Phyllotaxis attribute
 		inline static std::string phyllotaxis_angle = "phyllotaxis_angle";
+		inline static std::string distance_to_tip = "distance_to_tip";
 	};
 
 	int radial_resolution = 8;

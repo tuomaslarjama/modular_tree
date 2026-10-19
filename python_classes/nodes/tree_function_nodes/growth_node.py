@@ -6,6 +6,15 @@ import bpy
 
 from ...m_tree_wrapper import lazy_m_tree
 from ..base_types.node import MtreeFunctionNode
+from ..debounce import schedule_build
+from .crown_hull import build_crown_hull
+
+
+def _rebuild_on_change(self, context):
+    mesher = self.get_mesher()
+    if mesher is not None:
+        schedule_build(mesher)
+
 
 # Parameter groupings for organized UI
 BASIC_PARAMS = ["seed", "iterations", "preview_iteration", "branch_length"]
@@ -62,6 +71,27 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
     show_physics: bpy.props.BoolProperty(name="Physics", default=False)
     show_lateral: bpy.props.BoolProperty(name="Lateral Branching", default=True)
     show_flowering: bpy.props.BoolProperty(name="Flowering", default=False)
+    crown_hull: bpy.props.PointerProperty(
+        name="Crown Hull",
+        type=bpy.types.Object,
+        poll=lambda self, candidate: candidate.type == "MESH",
+        description="Closed mesh the shoots have to stay inside",
+        update=_rebuild_on_change,
+    )
+    vigor_scale: bpy.props.FloatProperty(
+        name="Vigor",
+        default=1.0,
+        min=0.1,
+        max=5.0,
+        description="Energy the tree distributes each year. Higher grows faster and denser, 1 = unchanged",
+        update=_rebuild_on_change,
+    )
+    vigor_sets_shoot_length: bpy.props.BoolProperty(
+        name="Vigor Sets Shoot Length",
+        default=False,
+        description="Strong shoots grow longer segments and weak ones shorter",
+        update=_rebuild_on_change,
+    )
 
     # Minimum gap between cut_threshold and flower_threshold for flowering to work
     THRESHOLD_GAP = 0.05
@@ -88,8 +118,14 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
                 flower_socket.property_value = cut_val + self.THRESHOLD_GAP
 
         # Call parent implementation
-        return super().construct_function()
-
+        func = super().construct_function()
+        func.vigor_scale = self.vigor_scale
+        func.vigor_sets_shoot_length = self.vigor_sets_shoot_length
+        hull = build_crown_hull(self, self.crown_hull)
+        if hull is not None:
+            func.hull = hull
+        return func
+ 
     def init(self, context):
         self.add_input("mt_TreeSocket", "Tree", is_property=False)
 
@@ -132,7 +168,7 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
             "mt_FloatSocket",
             "Apical Dominance",
             min_value=0,
-            max_value=1,
+            max_value=2,
             property_name="apical_dominance",
             property_value=0.7,
             description=PARAM_DESCRIPTIONS["apical_dominance"],
@@ -141,7 +177,7 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
             "mt_FloatSocket",
             "Grow Threshold",
             min_value=0,
-            max_value=1,
+            max_value=10,
             property_name="grow_threshold",
             property_value=0.5,
             description=PARAM_DESCRIPTIONS["grow_threshold"],
@@ -150,7 +186,7 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
             "mt_FloatSocket",
             "Cut Threshold",
             min_value=0,
-            max_value=1,
+            max_value=10,
             property_name="cut_threshold",
             property_value=0.2,
             description=PARAM_DESCRIPTIONS["cut_threshold"],
@@ -161,7 +197,7 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
             "mt_FloatSocket",
             "Split Threshold",
             min_value=0,
-            max_value=1,
+            max_value=10,
             property_name="split_threshold",
             property_value=0.7,
             description=PARAM_DESCRIPTIONS["split_threshold"],
@@ -238,7 +274,7 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
             "mt_FloatSocket",
             "Lateral Activation",
             min_value=0,
-            max_value=1,
+            max_value=10,
             property_name="lateral_activation",
             property_value=0.4,
             description=PARAM_DESCRIPTIONS["lateral_activation"],
@@ -336,6 +372,9 @@ class GrowthNode(bpy.types.Node, MtreeFunctionNode):
             op.preset = preset_name
             op.node_tree_name = self.id_data.name
             op.node_name = self.name
+        layout.prop(self, "crown_hull")
+        layout.prop(self, "vigor_scale")
+        layout.prop(self, "vigor_sets_shoot_length")
 
         # Parameter sections
         self._draw_section(layout, "Basic", "show_basic", BASIC_PARAMS)

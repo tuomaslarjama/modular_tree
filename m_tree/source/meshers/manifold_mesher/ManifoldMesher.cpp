@@ -89,6 +89,9 @@ CircleDesignator add_circle(const Vector3& node_position, const Node& node, floa
 	auto& phyllotaxis_attr =
 	    *static_cast<Attribute<float>*>(mesh.attributes[AttributeNames::phyllotaxis_angle].get());
 	float phyllotaxis_value = std::fmod(section_index * GOLDEN_ANGLE_RAD, 2.0f * (float)M_PI);
+	auto& distance_to_tip_attr =
+	    *static_cast<Attribute<float>*>(mesh.attributes[AttributeNames::distance_to_tip].get());
+	float distance_to_tip = calculate_branch_extent(node) - node.length * factor;
 
 	for (size_t i = 0; i < radial_n_points; i++)
 	{
@@ -107,6 +110,7 @@ CircleDesignator add_circle(const Vector3& node_position, const Node& node, floa
 		branch_extent_attr.data[index] = pp_ctx.branch_extent;
 		// Set phyllotaxis angle (same for all vertices in this cross-section)
 		phyllotaxis_attr.data[index] = phyllotaxis_value;
+		distance_to_tip_attr.data[index] = distance_to_tip;
 		mesh.uvs.emplace_back((float)i / radial_n_points, uv_y);
 	}
 	mesh.uvs.emplace_back(1, uv_y);
@@ -245,6 +249,8 @@ void add_child_base_geometry(const std::vector<int>& child_base_indices,
 	auto& phyllotaxis_attr = *static_cast<Attribute<float>*>(
 	    mesh.attributes[ManifoldMesher::AttributeNames::phyllotaxis_angle].get());
 	float phyllotaxis_value = std::fmod(section_index * GOLDEN_ANGLE_RAD, 2.0f * (float)M_PI);
+	auto& distance_to_tip_attr = *static_cast<Attribute<float>*>(
+	    mesh.attributes[ManifoldMesher::AttributeNames::distance_to_tip].get());
 
 	Vector3 direction =
 	    (mesh.vertices[child_base_indices[2]] - mesh.vertices[child_base_indices[0]])
@@ -273,6 +279,7 @@ void add_child_base_geometry(const std::vector<int>& child_base_indices,
 		branch_extent_attr.data[added_vertex_index] = pp_ctx.branch_extent;
 		// Set phyllotaxis angle
 		phyllotaxis_attr.data[added_vertex_index] = phyllotaxis_value;
+		distance_to_tip_attr.data[added_vertex_index] = pp_ctx.branch_extent;
 
 		int polygon_index = mesh.add_polygon();
 		mesh.polygons[polygon_index] = {
@@ -466,6 +473,7 @@ Mesh ManifoldMesher::mesh_tree(Tree& tree)
 	auto& branch_extent_attr = mesh.add_attribute<float>(AttributeNames::branch_extent);
 	// Phyllotaxis attribute
 	auto& phyllotaxis_attr = mesh.add_attribute<float>(AttributeNames::phyllotaxis_angle);
+	auto& distance_to_tip_attr = mesh.add_attribute<float>(AttributeNames::distance_to_tip);
 
 	int stem_id_counter = 0;
 	for (auto& stem : tree.get_stems())

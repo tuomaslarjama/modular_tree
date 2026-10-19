@@ -10,6 +10,7 @@ from ...m_tree_wrapper import lazy_m_tree as m_tree
 from ...mesh_utils import create_mesh_from_cpp
 from ..base_types.node import MtreeNode
 from ..debounce import schedule_build
+from .crown_hull import build_crown_hull
 
 
 def on_update_prop(node, context):
@@ -36,6 +37,14 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
     # Status feedback properties
     status_message: bpy.props.StringProperty(default="")
     status_is_error: bpy.props.BoolProperty(default=False)
+
+    prune_hull: bpy.props.PointerProperty(
+        name="Prune Hull",
+        type=bpy.types.Object,
+        poll=lambda self, candidate: candidate.type == "MESH",
+        description="Saw off everything outside this mesh as the last step, without changing the rest of the tree",
+        update=on_update_prop,
+    )
 
     def init(self, context):
         self.add_output("mt_TreeSocket", "Tree", is_property=False)
@@ -79,6 +88,7 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
         container.prop(self, "auto_update")
         container.prop(self, "radial_resolution")
         container.prop(self, "smoothness")
+        container.prop(self, "prune_hull")
 
     def _draw_leaves_button(self, container):
         if self._has_valid_tree_object():
@@ -110,6 +120,10 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
                 raise ValueError("Connected node returned no tree function")
             tree.set_trunk_function(trunk_function)
             tree.execute_functions()
+
+            prune_hull = build_crown_hull(self, self.prune_hull)
+            if prune_hull is not None:
+                prune_hull.prune_tree(tree)
 
             cpp_mesh = self._mesh_tree(tree)
             self._output_to_blender(cpp_mesh)
@@ -148,7 +162,6 @@ class TreeMesherNode(bpy.types.Node, MtreeNode):
         if not isinstance(tree_mesh, bpy.types.Mesh):
             raise TypeError("Tree object data is not a Mesh")
         tree_mesh.clear_geometry()
-        bpy.context.view_layer.objects.active = tree_obj
 
         create_mesh_from_cpp(tree_mesh, cpp_mesh)
 

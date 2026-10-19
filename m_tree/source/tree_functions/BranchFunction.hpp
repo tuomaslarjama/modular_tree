@@ -1,5 +1,6 @@
 #pragma once
 #include "./base_types/TreeFunction.hpp"
+#include "CrownHull.hpp"
 #include "CrownShape.hpp"
 #include "source/tree_functions/base_types/Property.hpp"
 #include "source/utilities/GeometryUtilities.hpp"
@@ -36,6 +37,11 @@ struct DistributionParams
 	float end = 1.0f;           // Position along parent where branches end (0-1)
 	float density = 2.0f;       // Number of branches per unit length (0 < x)
 	float phillotaxis = 137.5f; // Spiral angle between branches (degrees)
+	float phillotaxis_offset = 0.0f; // Rolls the whole branch pattern around the parent (degrees)
+	bool offset_from_up = false;     // Measure the offset from the parent's upper side instead of an arbitrary side
+	int branches_per_node = 1;  // 1 = spiral/alternate, 2 = opposite, 3+ = whorled
+	float skip_chance = 0.0f;   // Chance that a single branch at a node is left out
+
 };
 
 class BranchFunction : public TreeFunction
@@ -55,12 +61,13 @@ class BranchFunction : public TreeFunction
 	std::shared_ptr<GravityParams> gravity = std::make_shared<GravityParams>();
 	std::shared_ptr<DistributionParams> distribution = std::make_shared<DistributionParams>();
 	std::shared_ptr<CrownParams> crown = std::make_shared<CrownParams>();
+	std::shared_ptr<CrownHull> hull; // optional; branches stay inside it when set
 
 	void execute(std::vector<Stem>& stems, int id, int parent_id) override;
 
   private:
-	std::vector<std::reference_wrapper<Node>> get_origins(std::vector<Stem>& stems, const int id,
-	                                                      const int parent_id);
+	bool shapes_to_hull() const { return hull != nullptr; }
+	std::vector<std::reference_wrapper<Node>> get_origins(std::vector<Stem>& stems, const int id, const int parent_id);
 
 	void grow_origins(std::vector<std::reference_wrapper<Node>>&, const int id);
 

@@ -89,6 +89,22 @@ bool propagate_inactive_rec(Node& node)
 
 namespace Mtree
 {
+
+// Side of the parent where the branch pattern starts, before phyllotaxis turns it
+static Vector3 first_branch_tangent(const Vector3& parent_direction,
+                                    const DistributionParams& distribution)
+{
+	Vector3 tangent = Geometry::get_orthogonal_vector(parent_direction);
+	if (distribution.offset_from_up)
+	{
+		Vector3 up_side = Geometry::projected_on_plane(Vector3{0, 0, 1}, parent_direction);
+		if (up_side.norm() > 0.01f) // a vertical parent has no upper side, keep the default
+			tangent = up_side.normalized();
+	}
+	float offset = distribution.phillotaxis_offset / 180 * std::numbers::pi_v<float>;
+	return Eigen::AngleAxisf(offset, parent_direction.normalized()) * tangent;
+}
+
 void BranchFunction::apply_gravity_to_branch(Node& branch_origin)
 {
 	propagate_inactive_rec(branch_origin);
@@ -155,12 +171,25 @@ void BranchFunction::grow_node_once(Node& node, const int id,
 	float child_radius =
 	    Geometry::lerp(info.origin_radius, info.origin_radius * end_radius, factor_in_branch);
 	float child_length = std::min(1 / resolution, info.desired_length - info.current_length);
+	if (child_length <= 1e-4f) // a too-short branch would get a zero or negative last segment
+	{
+		mark_inactive(node);
+		return;
+	}
 	bool should_terminate;
 	Vector3 child_direction = get_main_child_direction(
 	    node, info.position, gravity->up_attraction, flatness, randomness.execute(factor_in_branch),
 	    resolution, should_terminate);
 
 	if (should_terminate)
+	{
+		mark_inactive(node);
+		return;
+	}
+
+	// a branch that bends out of the hull after the length clamp stops at its boundary
+	Vector3 child_end = info.position + node.direction * node.length + child_direction * child_length;
+	if (shapes_to_hull() && !hull->contains(child_end))
 	{
 		mark_inactive(node);
 		return;
@@ -270,7 +299,7 @@ BranchFunction::get_origins(std::vector<Stem>& stems, const int id, const int pa
 		                     branch_length; // the length at which we stop adding new branch origins
 		float current_length = 0;
 		float dist_to_next_origin = absolute_start;
-		Vector3 tangent = Geometry::get_orthogonal_vector(branch[0].node->direction);
+		Vector3 tangent = first_branch_tangent(branch[0].node->direction, *distribution);
 
 		for (size_t node_index = 0; node_index < branch.size(); node_index++)
 		{
@@ -317,7 +346,6 @@ BranchFunction::get_origins(std::vector<Stem>& stems, const int id, const int pa
 					float branch_length = length.execute(factor);
 					float effective_start_angle = start_angle.execute(factor);
 
-					// Calculate height-based modifications for crown shape and angle
 					bool needs_height_calc =
 					    crown_zone_height > EPSILON && (crown->shape != CrownShape::Cylindrical ||
 					                                    std::abs(crown->angle_variation) > EPSILON);
@@ -329,19 +357,15 @@ BranchFunction::get_origins(std::vector<Stem>& stems, const int id, const int pa
 
 						if (branch_z >= crown_start_z)
 						{
-							// Ratio goes from 1.0 at crown base to 0.0 at top, matching Weber &
-							// Penn paper convention where ratio represents "distance from top"
 							float height_ratio = 1.0f - std::min(1.0f, (branch_z - crown_start_z) /
 							                                               crown_zone_height);
 
-							// Crown shape length multiplier
 							if (crown->shape != CrownShape::Cylindrical)
 							{
 								branch_length *=
 								    CrownShapeUtils::get_shape_ratio(crown->shape, height_ratio);
 							}
 
-							// Height-based angle variation (always uses Conical per W&P paper)
 							if (std::abs(crown->angle_variation) > EPSILON)
 							{
 								float shape_ratio = CrownShapeUtils::get_shape_ratio(
@@ -354,26 +378,52 @@ BranchFunction::get_origins(std::vector<Stem>& stems, const int id, const int pa
 						}
 					}
 
-					Vector3 child_direction =
-					    Geometry::lerp(node.direction, tangent, effective_start_angle / 90);
-					child_direction.normalize();
-
-					float node_length = std::min(branch_length, 1 / (resolution + 0.001f));
-					NodeChild child{
-					    Node{child_direction, node.tangent, node_length, child_radius, id},
-					    position_in_parent};
-					node.children.push_back(std::make_shared<NodeChild>(std::move(child)));
-					auto& child_node = node.children.back()->node;
 					Vector3 child_position =
 					    node_position + node.direction * node.length * position_in_parent;
-					child_node.growthInfo =
-					    BranchGrowthInfo{.desired_length = branch_length - node_length,
-					                     .origin_radius = child_radius,
-					                     .position = child_position,
-					                     .current_length = child_node.length};
+					float node_length = std::min(branch_length, 1 / (resolution + 0.001f));
+					int branch_count = std::max(1, distribution->branches_per_node);
 
-					if (branch_length - node_length > 1e-3)
-						origins.push_back(std::ref(child_node));
+					for (int k = 0; k < branch_count; k++)
+					{
+						// only draw a random number when skipping is on, so existing seeds stay
+						// identical
+						if (distribution->skip_chance > 0 &&
+						    rand_gen.get_0_1() < distribution->skip_chance)
+						{
+							continue;
+						}
+
+						float spread = 2 * std::numbers::pi_v<float> * k / branch_count;
+						Vector3 branch_tangent =
+						    Eigen::AngleAxisf(spread, node.direction) * tangent;
+						Vector3 child_direction = Geometry::lerp(node.direction, branch_tangent,
+						                                         effective_start_angle / 90);
+						child_direction.normalize();
+
+						float this_branch_length = branch_length;
+						if (shapes_to_hull())
+						{
+							this_branch_length =
+							    hull->length_inside(child_position, child_direction, branch_length);
+							if (this_branch_length < node_length) // not even one segment fits
+								continue;
+						}
+
+						NodeChild child{
+						    Node{child_direction, node.tangent, node_length, child_radius, id},
+						    position_in_parent};
+						node.children.push_back(std::make_shared<NodeChild>(std::move(child)));
+						auto& child_node = node.children.back()->node;
+						child_node.growthInfo =
+						    BranchGrowthInfo{.desired_length = this_branch_length - node_length,
+						                     .origin_radius = child_radius,
+						                     .position = child_position,
+						                     .current_length = child_node.length};
+
+						if (this_branch_length - node_length > 1e-3)
+							origins.push_back(std::ref(child_node));
+					}
+
 					position_in_parent += position_in_parent_step;
 					if (i > 0)
 					{

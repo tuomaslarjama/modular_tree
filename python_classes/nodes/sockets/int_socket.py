@@ -13,7 +13,9 @@ class MtreeIntSocket(bpy.types.NodeSocket, MtreeSocket):
     max_value: bpy.props.IntProperty(default=10**9)
 
     def update_value(self, context):
-        self["property_value"] = max(self.min_value, min(self.max_value, self.property_value))
+        clamped = max(self.min_value, min(self.max_value, self.property_value))
+        if clamped != self.property_value:
+            self.property_value = clamped
 
     property_value: bpy.props.IntProperty(default=0, update=update_value)
 

@@ -1,6 +1,8 @@
 #pragma once
 #include "source/tree_functions/base_types/TreeFunction.hpp"
+#include "source/tree_functions/CrownHull.hpp"
 #include <vector>
+#include <memory>
 
 namespace Mtree
 {
@@ -62,6 +64,8 @@ class GrowthFunction : public TreeFunction
 
 	float root_flux = 5;
 
+	std::shared_ptr<CrownHull> hull; // optional; shoots that would leave it are pruned
+
 	// Lateral branching parameters
 	bool enable_lateral_branching = true;
 	float lateral_start = 0.1f;      // Start position along parent (0-1)
@@ -69,12 +73,16 @@ class GrowthFunction : public TreeFunction
 	float lateral_density = 2.0f;    // Potential branch points per unit length
 	float lateral_activation = 0.4f; // Vigor threshold to activate dormant buds
 	float lateral_angle = 45.0f;     // Initial angle from parent direction
+	
+	float vigor_scale = 1.0f;              // scales the energy the tree distributes each year; 1 = unchanged
+	bool vigor_sets_shoot_length = false;  // strong shoots grow longer segments, weak ones shorter
 
 	void execute(std::vector<Stem>& stems, int id, int parent_id) override;
 
   private:
 	void create_lateral_buds_rec(Node& node, int id, Vector3 pos, float& dist_to_next,
 	                             float& current_length, float total_length, float& philo);
+	bool shapes_to_hull() const { return hull != nullptr; }
 };
 
 } // namespace Mtree

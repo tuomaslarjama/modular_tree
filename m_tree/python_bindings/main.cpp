@@ -11,6 +11,7 @@
 #include "source/tree_functions/TrunkFunction.hpp"
 #include "source/tree_functions/BranchFunction.hpp"
 #include "source/tree_functions/CrownShape.hpp"
+#include "source/tree_functions/CrownHull.hpp"
 #include "source/tree_functions/GrowthFunction.hpp"
 #include "source/tree_functions/PipeRadiusFunction.hpp"
 #include "source/meshers/splines_mesher/BasicMesher.hpp"
@@ -71,6 +72,12 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("n2", &LeafShapeGenerator::n2)
         .def_readwrite("n3", &LeafShapeGenerator::n3)
         .def_readwrite("aspect_ratio", &LeafShapeGenerator::aspect_ratio)
+        .def_readwrite("width_balance", &LeafShapeGenerator::width_balance)
+        .def_readwrite("base_notch_depth", &LeafShapeGenerator::base_notch_depth)
+        .def_readwrite("base_notch_width", &LeafShapeGenerator::base_notch_width)
+        .def_readwrite("base_asymmetry", &LeafShapeGenerator::base_asymmetry)
+        .def_readwrite("tip_length", &LeafShapeGenerator::tip_length)
+        .def_readwrite("tip_width", &LeafShapeGenerator::tip_width)
         .def_readwrite("margin_type", &LeafShapeGenerator::margin_type)
         .def_readwrite("tooth_count", &LeafShapeGenerator::tooth_count)
         .def_readwrite("tooth_depth", &LeafShapeGenerator::tooth_depth)
@@ -87,6 +94,7 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("vein_displacement", &LeafShapeGenerator::vein_displacement)
         .def_readwrite("edge_curl", &LeafShapeGenerator::edge_curl)
         .def_readwrite("contour_resolution", &LeafShapeGenerator::contour_resolution)
+        .def_readwrite("inner_rings", &LeafShapeGenerator::inner_rings)
         .def_readwrite("seed", &LeafShapeGenerator::seed)
         .def("generate", &LeafShapeGenerator::generate);
 
@@ -132,7 +140,11 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("start", &DistributionParams::start)
         .def_readwrite("end", &DistributionParams::end)
         .def_readwrite("density", &DistributionParams::density)
-        .def_readwrite("phillotaxis", &DistributionParams::phillotaxis);
+        .def_readwrite("phillotaxis", &DistributionParams::phillotaxis)
+    	.def_readwrite("phillotaxis_offset", &DistributionParams::phillotaxis_offset)
+	    .def_readwrite("offset_from_up", &DistributionParams::offset_from_up)
+	    .def_readwrite("branches_per_node", &DistributionParams::branches_per_node)
+	    .def_readwrite("skip_chance", &DistributionParams::skip_chance);
 
     py::class_<TreeFunction, std::shared_ptr<TreeFunction>>(m, "TreeFunction")
         .def_readwrite("seed", &TreeFunction::seed)
@@ -187,6 +199,10 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("power", &PipeRadiusFunction::power)
         ;
 
+    py::class_<CrownHull, std::shared_ptr<CrownHull>>(m, "CrownHull")
+        .def(py::init<const std::vector<float>&, const std::vector<int>&, int>())
+        .def("prune_tree", [](const CrownHull& hull, Tree& tree) { hull.prune_tree(tree.get_stems()); });
+
     py::class_<BranchFunction, std::shared_ptr<BranchFunction>, TreeFunction>(m, "BranchFunction")
         .def(py::init<>())
         .def_readwrite("length", &BranchFunction::length)
@@ -202,6 +218,7 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("gravity", &BranchFunction::gravity)
         .def_readwrite("distribution", &BranchFunction::distribution)
         .def_readwrite("crown", &BranchFunction::crown)
+	    .def_readwrite("hull", &BranchFunction::hull)
         ;
 
     py::class_<GrowthFunction, std::shared_ptr<GrowthFunction>, TreeFunction>(m, "GrowthFunction")
@@ -217,6 +234,9 @@ PYBIND11_MODULE(m_tree, m) {
         .def_readwrite("gravitropism", &GrowthFunction::gravitropism)
         .def_readwrite("randomness", &GrowthFunction::randomness)
         .def_readwrite("gravity_strength", &GrowthFunction::gravity_strength)
+	    .def_readwrite("hull", &GrowthFunction::hull)
+	    .def_readwrite("vigor_scale", &GrowthFunction::vigor_scale)
+	    .def_readwrite("vigor_sets_shoot_length", &GrowthFunction::vigor_sets_shoot_length)
         // Lateral branching parameters
         .def_readwrite("enable_lateral_branching", &GrowthFunction::enable_lateral_branching)
         .def_readwrite("lateral_start", &GrowthFunction::lateral_start)

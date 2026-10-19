@@ -11,7 +11,11 @@ from ..base_types.node import MtreeNode
 from ..debounce import schedule_build
 
 # Socket parameter definitions for organized access
-CONTOUR_PARAMS = ["m", "a", "b", "n1", "n2", "n3", "aspect_ratio"]
+CONTOUR_PARAMS = [
+    "m", "a", "b", "n1", "n2", "n3", "aspect_ratio", "width_balance",
+    "base_notch_depth", "base_notch_width", "base_asymmetry", "tip_length", "tip_width",
+    "contour_resolution", "inner_rings",
+]
 MARGIN_PARAMS = ["tooth_count", "tooth_depth", "tooth_sharpness"]
 VENATION_PARAMS = ["vein_density", "kill_distance", "attraction_distance", "growth_step_size"]
 SURFACE_PARAMS = ["midrib_curvature", "cross_curvature", "vein_displacement", "edge_curl"]
@@ -26,6 +30,14 @@ PARAM_DESCRIPTIONS = {
     "n2": "Shape of each lobe. Low = bulging lobes, high = pinched angular lobes",
     "n3": "Secondary lobe shaping. Adjust relative to Lobe Shape A for asymmetric lobes",
     "aspect_ratio": "Width-to-height ratio. 0.5 = twice as long as wide, 1.0 = equal, 2.0 = wider than tall",
+    "width_balance": "Moves the widest point of the leaf. Positive = toward the tip (oak), negative = toward the base",
+    "base_notch_depth": "How deep the notch at the leaf base cuts in. 0 = no notch, 0.4 = heart-shaped (linden)",
+    "base_notch_width": "Angular width of the base notch in radians. Wider = broader, rounder basal lobes",
+    "base_asymmetry": "Makes one basal lobe larger than the other (oblique base). Negative flips the side",
+    "tip_length": "Draws the leaf tip out into a point. 0 = no extra tip",
+    "tip_width": "Angular width of the drawn-out tip in radians. Smaller = narrower, sharper tip",
+    "contour_resolution": "Outline samples, rounded up to a multiple of 4. Lower = fewer triangles",
+    "inner_rings": "Vertex rings inside the outline, needed for bending. 0 = outline fan only, -1 = automatic",
     # Margin
     "tooth_count": "Number of teeth or scallops along the leaf edge",
     "tooth_depth": "How deep the teeth cut into the leaf contour",
@@ -180,6 +192,78 @@ class LeafShapeNode(bpy.types.Node, MtreeNode):
             min_value=0.01,
             max_value=2.0,
             description=PARAM_DESCRIPTIONS["aspect_ratio"],
+        )
+        self.add_input(
+            "mt_FloatSocket",
+            "Width Balance",
+            property_name="width_balance",
+            property_value=0.0,
+            min_value=-1.0,
+            max_value=1.0,
+            description=PARAM_DESCRIPTIONS["width_balance"],
+        )
+        self.add_input(
+            "mt_FloatSocket",
+            "Base Notch Depth",
+            property_name="base_notch_depth",
+            property_value=0.0,
+            min_value=0.0,
+            max_value=0.95,
+            description=PARAM_DESCRIPTIONS["base_notch_depth"],
+        )
+        self.add_input(
+            "mt_FloatSocket",
+            "Base Notch Width",
+            property_name="base_notch_width",
+            property_value=0.5,
+            min_value=0.05,
+            max_value=1.5,
+            description=PARAM_DESCRIPTIONS["base_notch_width"],
+        )
+        self.add_input(
+            "mt_FloatSocket",
+            "Base Asymmetry",
+            property_name="base_asymmetry",
+            property_value=0.0,
+            min_value=-0.5,
+            max_value=0.5,
+            description=PARAM_DESCRIPTIONS["base_asymmetry"],
+        )
+        self.add_input(
+            "mt_FloatSocket",
+            "Tip Length",
+            property_name="tip_length",
+            property_value=0.0,
+            min_value=0.0,
+            max_value=2.0,
+            description=PARAM_DESCRIPTIONS["tip_length"],
+        )
+        self.add_input(
+            "mt_FloatSocket",
+            "Tip Width",
+            property_name="tip_width",
+            property_value=0.4,
+            min_value=0.05,
+            max_value=1.5,
+            description=PARAM_DESCRIPTIONS["tip_width"],
+        )
+        self.add_input(
+            "mt_IntSocket",
+            "Resolution",
+            property_name="contour_resolution",
+            property_value=64,
+            min_value=8,
+            max_value=256,
+            description=PARAM_DESCRIPTIONS["contour_resolution"],
+        )
+        self.add_input(
+            "mt_IntSocket",
+            "Inner Rings",
+            property_name="inner_rings",
+            property_value=-1,
+            min_value=-1,
+            max_value=8,
+            description=PARAM_DESCRIPTIONS["inner_rings"],
         )
         # Margin sockets
         self.add_input(

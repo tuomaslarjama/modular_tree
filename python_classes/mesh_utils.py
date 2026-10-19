@@ -19,6 +19,7 @@ FLOAT_ATTRIBUTES = [
     "branch_extent",
     "vein_distance",
     "phyllotaxis_angle",
+    "distance_to_tip",
 ]
 
 VECTOR3_ATTRIBUTES = [

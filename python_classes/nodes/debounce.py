@@ -22,7 +22,7 @@ POLL_INTERVAL = 0.1  # seconds between socket-value polls
 # Maps bl_idname -> list of property names to watch.
 _WATCHED_NODE_PROPS = {
     "mt_LeafShapeNode": ["margin_type", "enable_venation", "venation_type"],
-    "mt_BranchNode": ["crown_shape", "angle_variation"],
+    "mt_BranchNode": ["crown_shape", "arrangement", "whorl_count"],
 }
 
 

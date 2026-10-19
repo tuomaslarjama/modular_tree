@@ -1,5 +1,7 @@
 import bpy
 
+addon_ready = False
+
 
 class MtreeNodeTree(bpy.types.NodeTree):
     bl_idname = "mt_MtreeNodeTree"
@@ -8,7 +10,8 @@ class MtreeNodeTree(bpy.types.NodeTree):
 
     def update(self):
         """Called when links or topology change."""
-        # Import here to avoid circular imports
+        if not addon_ready:
+            return
         from ..debounce import schedule_build
 
         for node in self.nodes:

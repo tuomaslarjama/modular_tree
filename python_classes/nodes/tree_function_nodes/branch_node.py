@@ -9,11 +9,12 @@ from ...viewport.shape_formulas import BLENDER_SHAPE_MAP
 from ...viewport.shape_formulas import CrownShape as PyCrownShape
 from ..base_types.node import MtreeFunctionNode
 from ..debounce import schedule_build
+from .crown_hull import build_crown_hull
 
 # Parameter groupings for organized UI
 BASIC_PARAMS = ["seed", "start", "end", "length", "branches_density", "start_angle"]
 SHAPE_PARAMS = ["randomness", "flatness", "up_attraction", "gravity_strength", "stiffness"]
-SPLIT_PARAMS = ["split_proba", "split_radius", "split_angle", "phillotaxis"]
+SPLIT_PARAMS = ["split_proba", "split_radius", "split_angle"]
 ADVANCED_PARAMS = ["break_chance", "resolution", "start_radius"]
 
 # Parameter descriptions for tooltips
@@ -32,12 +33,27 @@ PARAM_DESCRIPTIONS = {
     "split_proba": "Probability of a branch splitting into two",
     "split_radius": "Minimum radius for splits to occur",
     "split_angle": "Angle between split branches",
-    "phillotaxis": "Spiral angle between branches (137.5 is golden angle)",
+    "phillotaxis": "Spiral angle between branch nodes (Spiral arrangement only)",
+    "phillotaxis_offset": "Rolls the whole branch pattern around the parent (degrees)",
+    "offset_from_up": "Measure the offset from the parent's upper side (with Alternate, 90 = branches only sideways)",
+    "skip_chance": "Chance that a single branch at a node is left out, so pairs and whorls break up",
+    "angle_variation": "Height-based angle variation: positive = upward at top, downward at base",
     "break_chance": "Probability of a branch breaking/stopping",
     "resolution": "Number of segments per unit length",
     "start_radius": "Branch radius at base relative to parent",
 }
 
+
+from bpy.app.handlers import persistent
+
+# Sockets added after the first templates were made. Kept out of init() so older
+# saved nodes can be given the same sockets when a file loads.
+LATER_SOCKETS = [
+    ("mt_FloatSocket", "Phillotaxis Offset", "phillotaxis_offset", 0.0, {"min_value": 0, "max_value": 360}),
+    ("mt_BoolSocket", "Offset From Up", "offset_from_up", False, {}),
+    ("mt_FloatSocket", "Skip Chance", "skip_chance", 0.0, {"min_value": 0, "max_value": 1}),
+    ("mt_FloatSocket", "Angle Spread", "angle_variation", 0.0, {"min_value": -45, "max_value": 45}),
+]
 
 def _update_crown_property(self, context):
     """Trigger auto-update when crown shape properties change."""
@@ -75,6 +91,39 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
         update=_update_crown_property,
     )
 
+    arrangement: bpy.props.EnumProperty(
+        name="Arrangement",
+        items=[
+            ("SPIRAL", "Spiral", "One branch per node, turned by the Phillotaxis angle (birch, oak, rowan)"),
+            ("ALTERNATE", "Alternate", "One branch per node in two rows, 180 degrees apart (linden and elm shoots)"),
+            ("OPPOSITE", "Opposite", "Pairs, each pair turned 90 degrees from the last (maple, ash)"),
+            ("WHORLED", "Whorled", "Rings of branches around the parent (pine, spruce)"),
+        ],
+        default="SPIRAL",
+        update=_update_crown_property,
+    )
+
+    crown_hull: bpy.props.PointerProperty(
+        name="Crown Hull",
+        type=bpy.types.Object,
+        poll=lambda self, candidate: candidate.type == "MESH",
+        description="Closed mesh the branches have to stay inside",
+        update=_update_crown_property,
+    )
+
+    whorl_count: bpy.props.IntProperty(
+        name="Whorl Count", default=4, min=3, max=8, update=_update_crown_property
+    )
+
+    skip_chance: bpy.props.FloatProperty(
+        name="Skip Chance",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        description="Chance that a single branch at a node is left out, so pairs and whorls break up",
+        update=_update_crown_property,
+    )
+
     angle_variation: bpy.props.FloatProperty(
         name="Angle Spread",
         default=0.0,
@@ -96,6 +145,7 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
 
     def draw(self, context, layout):
         layout.prop(self, "crown_shape", text="Crown")
+        layout.prop(self, "arrangement", text="") 
 
     # Mapping from socket property_name to nested struct path
     NESTED_PROPERTY_MAP = {
@@ -104,6 +154,11 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
         "end": ("distribution", "end"),
         "branches_density": ("distribution", "density"),
         "phillotaxis": ("distribution", "phillotaxis"),
+        "phillotaxis_offset": ("distribution", "phillotaxis_offset"),
+        "offset_from_up": ("distribution", "offset_from_up"),
+        "skip_chance": ("distribution", "skip_chance"),
+        # Crown params
+        "angle_variation": ("crown", "angle_variation"),
         # Gravity params
         "gravity_strength": ("gravity", "strength"),
         "stiffness": ("gravity", "stiffness"),
@@ -144,7 +199,19 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
         # Uses shared BLENDER_SHAPE_MAP and converts via int (both enums share same values)
         py_shape = BLENDER_SHAPE_MAP.get(self.crown_shape, PyCrownShape.Cylindrical)
         func.crown.shape = lazy_m_tree.CrownShape(int(py_shape))
-        func.crown.angle_variation = self.angle_variation
+
+        if self.arrangement == "ALTERNATE":
+            func.distribution.phillotaxis = 180.0
+        elif self.arrangement == "OPPOSITE":
+            func.distribution.branches_per_node = 2
+            func.distribution.phillotaxis = 90.0
+        elif self.arrangement == "WHORLED":
+            func.distribution.branches_per_node = self.whorl_count
+            func.distribution.phillotaxis = 180.0 / self.whorl_count
+
+        hull = build_crown_hull(self, self.crown_hull)
+        if hull is not None:
+            func.hull = hull
 
         # Handle child nodes
         for child in self.get_child_nodes():
@@ -288,7 +355,7 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
             property_value=137.5,
             description=PARAM_DESCRIPTIONS["phillotaxis"],
         )
-
+        
         # Advanced parameters
         self.add_input(
             "mt_FloatSocket",
@@ -314,6 +381,8 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
             property_value=0.4,
             description=PARAM_DESCRIPTIONS["start_radius"],
         )
+
+        self.add_missing_sockets()
 
         self.add_output("mt_TreeSocket", "Tree", is_property=False)
 
@@ -341,6 +410,16 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
             if socket:
                 socket.property_value = float(param_value)
 
+    def _draw_socket(self, layout, param: str) -> None:
+        socket = self._get_socket_by_property(param)
+        if socket and socket.is_property:
+            col = layout.column()
+            socket.draw(bpy.context, col, self, socket.name)
+            if param in PARAM_DESCRIPTIONS:
+                sub = col.row()
+                sub.scale_y = 0.6
+                sub.label(text=f"  {PARAM_DESCRIPTIONS[param]}")
+
     def _draw_section(self, layout, title: str, show_prop: str, params: list) -> None:
         """Draw a collapsible section with parameters."""
         box = layout.box()
@@ -357,15 +436,7 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
 
         if show:
             for param in params:
-                socket = self._get_socket_by_property(param)
-                if socket and socket.is_property:
-                    col = box.column()
-                    socket.draw(bpy.context, col, self, socket.name)
-                    # Add description as sub-label
-                    if param in PARAM_DESCRIPTIONS:
-                        sub = col.row()
-                        sub.scale_y = 0.6
-                        sub.label(text=f"  {PARAM_DESCRIPTIONS[param]}")
+                self._draw_socket(box, param)
 
     def draw_inspector(self, context, layout):
         """Draw organized parameters in the Properties panel (N key)."""
@@ -378,11 +449,24 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
             op.preset = preset_name
             op.node_tree_name = self.id_data.name
             op.node_name = self.name
+        
+        box.prop(self, "crown_hull")
 
         # Existing sections
         self._draw_section(layout, "Basic", "show_basic", BASIC_PARAMS)
         self._draw_section(layout, "Shape", "show_shape", SHAPE_PARAMS)
         self._draw_section(layout, "Splitting", "show_split", SPLIT_PARAMS)
+
+        box = layout.box()
+        box.label(text="Arrangement")
+        box.prop(self, "arrangement", text="")
+        if self.arrangement == "SPIRAL":
+            self._draw_socket(box, "phillotaxis")
+        if self.arrangement == "WHORLED":
+            box.prop(self, "whorl_count")
+        self._draw_socket(box, "phillotaxis_offset")
+        self._draw_socket(box, "offset_from_up")
+        self._draw_socket(box, "skip_chance")
 
         # Crown shape section with enum dropdown
         box = layout.box()
@@ -400,7 +484,32 @@ class BranchNode(bpy.types.Node, MtreeFunctionNode):
         if show:
             box.prop(self, "crown_shape", text="")
             box.prop(self, "show_crown_preview", text="Preview in Viewport")
-            box.prop(self, "angle_variation", text="Angle Spread")
+            self._draw_socket(box, "angle_variation")
             box.label(text="Controls branch length and angle based on height", icon="INFO")
 
         self._draw_section(layout, "Advanced", "show_advanced", ADVANCED_PARAMS)
+
+    def add_missing_sockets(self):
+        existing = {socket.property_name for socket in self.inputs if socket.is_property}
+        for socket_type, label, property_name, default, limits in LATER_SOCKETS:
+            if property_name in existing:
+                continue
+            # an older node may still hold this value as a node property
+            value = getattr(self, property_name, default)
+            self.add_input(
+                socket_type,
+                label,
+                property_name=property_name,
+                property_value=value,
+                description=PARAM_DESCRIPTIONS.get(property_name, ""),
+                **limits,
+            )
+            
+@persistent
+def add_missing_sockets_on_load(_):
+    for node_tree in bpy.data.node_groups:
+        if node_tree.bl_idname != "mt_MtreeNodeTree":
+            continue
+        for node in node_tree.nodes:
+            if node.bl_idname == "mt_BranchNode":
+                node.add_missing_sockets()

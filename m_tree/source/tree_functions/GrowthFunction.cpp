@@ -97,6 +97,14 @@ void GrowthFunction::simulate_growth_rec(Node& node, int id)
 	// Check for dormant bud activation
 	bool activate_dormant =
 	    info.type == BioNodeInfo::NodeType::Dormant && info.vigor > lateral_activation;
+	if (activate_dormant && shapes_to_hull())
+	{
+		// a bud whose first shoot would already be outside the hull stays asleep,
+		// instead of becoming a stub that gets pruned straight away
+		float shoot_length = branch_length * (info.vigor + 0.1f);
+		if (!hull->contains(info.absolute_position + node.direction * shoot_length))
+			activate_dormant = false;
+	}
 	if (activate_dormant)
 	{
 		// Activate the dormant bud - it becomes a meristem
@@ -116,6 +124,14 @@ void GrowthFunction::simulate_growth_rec(Node& node, int id)
 	// Flower check - vigor low but above cut threshold
 	bool become_flower = enable_flowering && info.type == BioNodeInfo::NodeType::Meristem &&
 	                     info.vigor < flower_threshold && info.vigor >= current_cut_threshold_;
+
+	Vector3 node_end = info.absolute_position + node.direction * node.length;
+	if (shapes_to_hull() && (primary_growth || split) &&
+	    !hull->contains(node_end + node.direction * branch_length))
+	{
+		// the shoot would leave the hull: prune the tip, like a cut back street tree
+		cut = true;
+	}
 
 	int child_count = node.children.size();
 	if (cut)
@@ -142,8 +158,12 @@ void GrowthFunction::simulate_growth_rec(Node& node, int id)
 		child_direction.normalize();
 		float child_radius = node.radius * GrowthConstants::kExtensionTaper;
 		float child_length = branch_length * (info.vigor + .1f);
+		float shoot_length =
+		    vigor_sets_shoot_length
+		        ? std::clamp(child_length, branch_length * 0.2f, branch_length * 2.0f)
+		        : branch_length;
 		NodeChild child =
-		    NodeChild{Node{child_direction, node.tangent, branch_length, child_radius, id}, 1};
+		    NodeChild{Node{child_direction, node.tangent, shoot_length, child_radius, id}, 1};
 		float child_angle =
 		    split ? info.philotaxis_angle + philotaxis_angle : info.philotaxis_angle;
 		child.node.growthInfo = BioNodeInfo(BioNodeInfo::NodeType::Meristem, 0, child_angle);
@@ -159,11 +179,18 @@ void GrowthFunction::simulate_growth_rec(Node& node, int id)
 		child_direction.normalize();
 		float child_radius = node.radius * GrowthConstants::kSplitTaper;
 		float child_length = branch_length * (info.vigor + .1f);
+		float shoot_length =
+		    vigor_sets_shoot_length
+		        ? std::clamp(child_length, branch_length * 0.2f, branch_length * 2.0f)
+		        : branch_length;
 		NodeChild child =
-		    NodeChild{Node{child_direction, node.tangent, branch_length, child_radius, id}, 1};
+		    NodeChild{Node{child_direction, node.tangent, shoot_length, child_radius, id}, 1};
 		child.node.growthInfo = BioNodeInfo(BioNodeInfo::NodeType::Meristem);
-		node.children.push_back(std::make_shared<NodeChild>(std::move(child)));
-		info.type = BioNodeInfo::NodeType::Branch;
+		if (!shapes_to_hull() || hull->contains(node_end + child_direction * branch_length))
+		{
+			node.children.push_back(std::make_shared<NodeChild>(std::move(child)));
+			info.type = BioNodeInfo::NodeType::Branch;
+		}
 	}
 	for (size_t i = 0; i < child_count; i++)
 	{
@@ -356,7 +383,9 @@ void GrowthFunction::execute(std::vector<Stem>& stems, int id, int parent_id)
 				current_cut_threshold_ += GrowthConstants::kThresholdAdjustmentStep;
 			}
 
-			update_vigor_rec(stem.node, target_light_flux); // distribute the energy in each node
+			update_vigor_rec(stem.node, target_light_flux * vigor_scale); // distribute the energy in each node
+			if (shapes_to_hull()) // the hull checks need this iteration's positions, not last year's
+				update_absolute_position_rec(stem.node, stem.position);
 			simulate_growth_rec(stem.node, id);             // apply rules to the tree
 			update_absolute_position_rec(stem.node, stem.position);
 			get_weight_rec(stem.node);

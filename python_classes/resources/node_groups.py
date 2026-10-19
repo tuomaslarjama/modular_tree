@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Version constant - increment when changing node group implementation
 # =============================================================================
-NODE_GROUP_VERSION = 3
+NODE_GROUP_VERSION = 4
 
 # =============================================================================
 # Node layout constants
@@ -248,6 +248,17 @@ def create_leaves_distribution_v2_node_group() -> NodeTree:
     )
     enable_normal_socket.default_value = True
 
+    terminal_only_socket = ng.interface.new_socket(
+        name="Terminal Growth Only", in_out="INPUT", socket_type="NodeSocketBool"
+    )
+    terminal_only_socket.default_value = False
+
+    terminal_length_socket = ng.interface.new_socket(
+        name="Terminal Length", in_out="INPUT", socket_type="NodeSocketFloat"
+    )
+    terminal_length_socket.default_value = 0.3
+    terminal_length_socket.min_value = 0.0
+
     # Output
     ng.interface.new_socket(name="Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
 
@@ -301,10 +312,44 @@ def create_leaves_distribution_v2_node_group() -> NodeTree:
     delete_geo.mode = "ALL"
     links.new(distribute.outputs["Points"], delete_geo.inputs["Geometry"])
 
+    # === TERMINAL GROWTH FILTER ===
+    # Keep a point only if it is within Terminal Length of its branch end (when enabled)
+    sample_tip_distance = nodes.new("GeometryNodeSampleNearestSurface")
+    sample_tip_distance.location = (_COL_SAMPLE_RADIUS, -NODE_SPACING_Y * 4)
+    sample_tip_distance.data_type = "FLOAT"
+    links.new(group_input.outputs["Geometry"], sample_tip_distance.inputs["Mesh"])
+    links.new(position_radius.outputs["Position"], sample_tip_distance.inputs["Sample Position"])
+
+    named_attr_tip = nodes.new("GeometryNodeInputNamedAttribute")
+    named_attr_tip.location = (_COL_SAMPLE_RADIUS - NODE_SPACING_X, -NODE_SPACING_Y * 4)
+    named_attr_tip.data_type = "FLOAT"
+    named_attr_tip.inputs["Name"].default_value = "distance_to_tip"
+    links.new(named_attr_tip.outputs["Attribute"], sample_tip_distance.inputs["Value"])
+
+    near_tip = nodes.new("FunctionNodeCompare")
+    near_tip.location = (_COL_SAMPLE_RADIUS + NODE_SPACING_X, -NODE_SPACING_Y * 4)
+    near_tip.data_type = "FLOAT"
+    near_tip.operation = "LESS_EQUAL"
+    links.new(sample_tip_distance.outputs["Value"], near_tip.inputs["A"])
+    links.new(group_input.outputs["Terminal Length"], near_tip.inputs["B"])
+
+    # "Terminal Growth Only" implies "near tip": passes everything when the switch is off
+    terminal_ok = nodes.new("FunctionNodeBooleanMath")
+    terminal_ok.location = (_COL_SAMPLE_RADIUS + NODE_SPACING_X * 2, -NODE_SPACING_Y * 3)
+    terminal_ok.operation = "IMPLY"
+    links.new(group_input.outputs["Terminal Growth Only"], terminal_ok.inputs[0])
+    links.new(near_tip.outputs["Result"], terminal_ok.inputs[1])
+
+    keep_leaf = nodes.new("FunctionNodeBooleanMath")
+    keep_leaf.location = (_COL_SAMPLE_RADIUS + NODE_SPACING_X * 2, -NODE_SPACING_Y)
+    keep_leaf.operation = "AND"
+    links.new(compare.outputs["Result"], keep_leaf.inputs[0])
+    links.new(terminal_ok.outputs["Boolean"], keep_leaf.inputs[1])
+
     bool_not = nodes.new("FunctionNodeBooleanMath")
     bool_not.location = (_COL_DELETE - NODE_SPACING_X / 2, -NODE_SPACING_Y)
     bool_not.operation = "NOT"
-    links.new(compare.outputs["Result"], bool_not.inputs[0])
+    links.new(keep_leaf.outputs["Boolean"], bool_not.inputs[0])
     links.new(bool_not.outputs["Boolean"], delete_geo.inputs["Selection"])
 
     # === SAMPLE DIRECTION FROM ORIGINAL MESH ===

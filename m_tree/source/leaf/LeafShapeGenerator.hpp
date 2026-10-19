@@ -18,6 +18,14 @@ class LeafShapeGenerator
 	float n2 = 3.0f;
 	float n3 = 3.0f;
 	float aspect_ratio = 0.5f;
+	float width_balance = 0.0f; // -1 base-heavy, 0 unchanged, +1 tip-heavy
+
+	// Base and tip shaping, applied on top of the superformula
+	float base_notch_depth = 0.0f;
+	float base_notch_width = 0.5f;
+	float base_asymmetry = 0.0f;
+	float tip_length = 0.0f;
+	float tip_width = 0.4f;
 
 	// Margin parameters
 	MarginType margin_type = MarginType::Entire;
@@ -42,13 +50,15 @@ class LeafShapeGenerator
 
 	// Resolution
 	int contour_resolution = 64;
+	int inner_rings = -1; // -1 = automatic (resolution / 16)
 	int seed = 42;
 
 	Mesh generate();
 
   private:
-	std::vector<Vector2> sample_contour();
+	std::vector<Vector2> sample_contour(size_t& base_index);
 	std::vector<Vector2> apply_margin(const std::vector<Vector2>& contour);
+	std::vector<Vector2> apply_width_balance(const std::vector<Vector2>& contour);
 	Mesh triangulate(const std::vector<Vector2>& contour);
 	void apply_venation(Mesh& mesh, const std::vector<Vector2>& contour);
 	void apply_deformation(Mesh& mesh, const std::vector<Vector2>& contour);
@@ -61,6 +71,8 @@ class LeafShapeGenerator
 	BBox2D compute_contour_bbox(const std::vector<Vector2>& contour) const;
 
 	float superformula_radius(float theta, float effective_n1) const;
+	float base_and_tip_scale(float theta) const;
+	Vector2 contour_point(float theta, float effective_n1) const;
 };
 
 } // namespace Mtree

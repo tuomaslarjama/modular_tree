@@ -28,9 +28,54 @@ float LeafShapeGenerator::superformula_radius(float theta, float effective_n1) c
 	return result;
 }
 
-std::vector<Vector2> LeafShapeGenerator::sample_contour()
+static float signed_angle_from(float theta, float reference)
 {
+	float difference = std::fmod(theta - reference + PI, TWO_PI);
+	if (difference < 0.0f)
+		difference += TWO_PI;
+	return difference - PI;
+}
+
+float LeafShapeGenerator::base_and_tip_scale(float theta) const
+{
+	const float base_angle = 1.5f * PI; // leaf base points down (-Y)
+	const float tip_angle = 0.5f * PI;  // leaf tip points up (+Y)
+	float scale = 1.0f;
+
+	float from_base = signed_angle_from(theta, base_angle);
+	if (base_notch_depth > 0.0f && std::abs(from_base) < base_notch_width)
+	{
+		float falloff = 1.0f - std::abs(from_base) / base_notch_width;
+		scale *= 1.0f - base_notch_depth * falloff * falloff;
+	}
+	if (base_asymmetry != 0.0f && std::abs(from_base) < 0.5f * PI)
+	{
+		// sin * cos^2 is zero at the notch and at the leaf sides, so one basal lobe
+		// grows and the other shrinks without breaking the outline. 2.6 scales its peak to ~1.
+		float cos_base = std::cos(from_base);
+		scale *= 1.0f + base_asymmetry * 2.6f * std::sin(from_base) * cos_base * cos_base;
+	}
+
+	float from_tip = signed_angle_from(theta, tip_angle);
+	if (tip_length > 0.0f && std::abs(from_tip) < tip_width)
+	{
+		float falloff = 1.0f - std::abs(from_tip) / tip_width;
+		scale *= 1.0f + tip_length * falloff * falloff;
+	}
+	return scale;
+}
+
+Vector2 LeafShapeGenerator::contour_point(float theta, float effective_n1) const
+{
+	float r = superformula_radius(theta, effective_n1) * base_and_tip_scale(theta);
+	return Vector2(r * std::cos(theta) * aspect_ratio, r * std::sin(theta));
+}
+
+std::vector<Vector2> LeafShapeGenerator::sample_contour(size_t& base_index)
+{
+	// Multiple of 4 so the exact base (3/4 turn) and tip (1/4 turn) angles get a sample
 	int res = std::max(contour_resolution, 8);
+	res = (res + 3) / 4 * 4;
 
 	// Sample base contour points
 	std::vector<Vector2> points;
@@ -41,21 +86,21 @@ std::vector<Vector2> LeafShapeGenerator::sample_contour()
 	for (int i = 0; i < res; ++i)
 	{
 		float theta = TWO_PI * static_cast<float>(i) / static_cast<float>(res);
-		float r = superformula_radius(theta, clamped_n1);
-		float x = r * std::cos(theta) * aspect_ratio;
-		float y = r * std::sin(theta);
-		points.push_back(Vector2(x, y));
+		points.push_back(contour_point(theta, clamped_n1));
 	}
 
 	// Adaptive refinement: subdivide segments with high curvature
 	std::vector<Vector2> refined;
 	refined.reserve(points.size() * 2);
+	size_t base_sample = static_cast<size_t>(res) * 3 / 4;
 
 	for (size_t i = 0; i < points.size(); ++i)
 	{
 		size_t prev = (i == 0) ? points.size() - 1 : i - 1;
 		size_t next = (i + 1) % points.size();
 
+		if (i == base_sample)
+			base_index = refined.size();
 		refined.push_back(points[i]);
 
 		// Check curvature deviation between this segment and the next
@@ -69,10 +114,7 @@ std::vector<Vector2> LeafShapeGenerator::sample_contour()
 		if (dot < 0.95f)
 		{
 			float theta_mid = TWO_PI * (static_cast<float>(i) + 0.5f) / static_cast<float>(res);
-			float r_mid = superformula_radius(theta_mid, clamped_n1);
-			float x_mid = r_mid * std::cos(theta_mid) * aspect_ratio;
-			float y_mid = r_mid * std::sin(theta_mid);
-			refined.push_back(Vector2(x_mid, y_mid));
+			refined.push_back(contour_point(theta_mid, clamped_n1));
 		}
 	}
 
@@ -152,6 +194,29 @@ std::vector<Vector2> LeafShapeGenerator::apply_margin(const std::vector<Vector2>
 	return result;
 }
 
+std::vector<Vector2> LeafShapeGenerator::apply_width_balance(const std::vector<Vector2>& contour)
+{
+	if (width_balance == 0.0f || contour.empty())
+		return contour;
+
+	auto bb = compute_contour_bbox(contour);
+	if (bb.height < 1e-10f)
+		return contour;
+
+	// Past +-1 the remap stops being monotonic and the outline folds over itself
+	float balance = std::clamp(width_balance, -1.0f, 1.0f);
+
+	std::vector<Vector2> result;
+	result.reserve(contour.size());
+	for (const auto& pt : contour)
+	{
+		float t = (pt.y() - bb.min_y) / bb.height; // 0 at base, 1 at tip
+		float new_t = t + balance * t * (1.0f - t);
+		result.push_back(Vector2(pt.x(), bb.min_y + new_t * bb.height));
+	}
+	return result;
+}
+
 Mesh LeafShapeGenerator::triangulate(const std::vector<Vector2>& contour)
 {
 	Mesh mesh;
@@ -185,7 +250,8 @@ Mesh LeafShapeGenerator::triangulate(const std::vector<Vector2>& contour)
 
 	// Number of inner rings
 	int effective_resolution = std::max(contour_resolution, 8);
-	int num_rings = std::clamp(effective_resolution / 16, 1, 8);
+	int num_rings = (inner_rings >= 0) ? std::min(inner_rings, 8)
+	                                   : std::clamp(effective_resolution / 16, 1, 8);
 
 	// Generate inner ring vertices (rings 1..num_rings), each ring has n vertices
 	for (int r = 1; r <= num_rings; ++r)
@@ -374,28 +440,22 @@ void LeafShapeGenerator::compute_uvs(Mesh& mesh, const std::vector<Vector2>& con
 Mesh LeafShapeGenerator::generate()
 {
 	// Pipeline
-	std::vector<Vector2> contour = sample_contour();
+	size_t base_index = 0;
+	std::vector<Vector2> contour = sample_contour(base_index);
+	contour = apply_width_balance(contour);
 	contour = apply_margin(contour);
 	Mesh mesh = triangulate(contour);
 	compute_uvs(mesh, contour);
 	apply_venation(mesh, contour);
 	apply_deformation(mesh, contour);
 
-	// Shift origin to tip of leaf (max Y point on contour)
-	float max_y = -std::numeric_limits<float>::max();
-	float tip_x = 0.0f;
-	for (const auto& pt : contour)
-	{
-		if (pt.y() > max_y)
-		{
-			max_y = pt.y();
-			tip_x = pt.x();
-		}
-	}
+	// Origin at the leaf base (petiole attachment), leaf extending along +Y like the fallback quad leaf.
+	// Width balance and margin move points one-to-one, so the base sample keeps its index: it is the notch when there is one.
+	Vector2 base_point = contour[base_index];
 	for (auto& v : mesh.vertices)
 	{
-		v.x() -= tip_x;
-		v.y() -= max_y;
+		v.x() -= base_point.x();
+		v.y() -= base_point.y();
 	}
 
 	return mesh;
